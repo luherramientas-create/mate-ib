@@ -1,5 +1,5 @@
 import { QUESTIONS } from './questions.js';
-import { loadActiveStudents, saveAttemptToFirestore, saveProgressToFirestore } from './firebase.js';
+import { loadActiveStudents, loadProgressFromFirestore, saveAttemptToFirestore, saveProgressToFirestore } from './firebase.js';
 
 const state = {
   section: null,
@@ -44,13 +44,20 @@ function autonomyLabel(attempts) {
 }
 
 function normalizeAnswer(value) {
-  return String(value).toLowerCase().replace(/\s+/g, '').replace(',', '.').replace('％', '%');
+  return String(value).toLowerCase().replace(/\s+/g, '').replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i').replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u').replace('ñ', 'n').replace(',', '.').replace('％', '%');
+}
+
+function hasConceptualKeywords(value, keywords = []) {
+  if (!keywords.length) return false;
+  const normalized = normalizeAnswer(value);
+  return keywords.every((keyword) => normalized.includes(normalizeAnswer(keyword)));
 }
 
 function isAccepted(value, subquestion) {
   const answer = normalizeAnswer(value);
   const accepted = subquestion.acceptedAnswers || [];
   if (accepted.some((item) => answer === normalizeAnswer(item))) return true;
+  if (hasConceptualKeywords(value, subquestion.conceptualKeywords)) return true;
   if (subquestion.exact) return false;
   const numericAnswer = Number(answer.replace('%', ''));
   if (!Number.isFinite(numericAnswer)) return false;
@@ -114,9 +121,20 @@ async function setSection(section) {
   }
 }
 
-function selectStudent(student) {
+async function selectStudent(student) {
   state.student = { ...student, section: state.section };
   $('#student-badge').textContent = `${student.name} · ${state.section}`;
+
+  try {
+    const remoteProgress = await loadProgressFromFirestore(student.id);
+    if (remoteProgress && Object.keys(remoteProgress).length) {
+      state.progress = { ...state.progress, ...remoteProgress };
+      saveLocalProgress();
+    }
+  } catch (error) {
+    console.error('Firebase / recuperar progreso:', error);
+  }
+
   renderQuestionMenu();
   showScreen('questions-screen');
 }
@@ -298,13 +316,19 @@ async function persistProgress(questionId) {
 
 async function checkAnswer() {
   const sub = state.currentQuestion.subquestions[state.currentSubquestionIndex];
+  const key = progressKey(state.currentQuestion.id);
+  const existingPart = state.progress[key]?.completedParts?.[sub.id];
+  const feedback = $('#feedback-area');
+  if (existingPart?.completed) {
+    feedback.innerHTML = '<div class="feedback success">✓ Esta parte ya fue completada. El resultado original se conserva.</div>';
+    return;
+  }
   const input = $('#answer-input');
   const answer = input.value.trim();
   if (!answer) return;
   state.attempts += 1;
   const correct = isAccepted(answer, sub);
   const part = await recordAttempt(sub, answer, correct);
-  const feedback = $('#feedback-area');
 
   if (correct) {
     const score = calculateScore(state.attempts);

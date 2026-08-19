@@ -88,7 +88,7 @@ export const QUESTIONS = [
         'Calcula \(P(0)=1200\times k^0\).',
         'Por tanto, \(P(0)=1200\).'
       ]) },
-      { id:'a_ii', label:'(a)(ii)', prompt:'Interprete lo que significa este valor en este contexto.', equation:'P(0)=1200', acceptedAnswers:['la población inicial de bacterias','la poblacion inicial de bacterias','población inicial de bacterias','poblacion inicial'], hints:h([
+      { id:'a_ii', label:'(a)(ii)', prompt:'Interprete lo que significa este valor en este contexto.', equation:'P(0)=1200', acceptedAnswers:['la población inicial de bacterias','la poblacion inicial de bacterias','población inicial de bacterias','poblacion inicial','1200 es la población inicial','1200 es la poblacion inicial'], conceptualKeywords:['poblacion','inicial','bacterias'], hints:h([
         '¿Qué representa \(P(t)\) en el problema?',
         'El valor se obtuvo cuando \(t=0\). ¿Qué momento representa?',
         'Relaciona \(P(0)\) con la población y el inicio del experimento.',
@@ -112,7 +112,7 @@ export const QUESTIONS = [
         'Forma \(1200(2.5)^t=5000(1.65)^t\).',
         'En Casio: MENU → A → Equation → F3 Solver y resuelve para \(t\). El resultado es aproximadamente \(3.43\) horas.'
       ]) },
-      { id:'e', label:'(e)', prompt:'Halle el valor de \(m\); dé la respuesta como un número entero.', equation:'S(t)=5000\times1.65^t', acceptedAnswers:['40','39.95','39.9521','39'], tolerance:0.02, hints:h([
+      { id:'e', label:'(e)', prompt:'Halle el valor de \(m\); dé la respuesta como un número entero.', equation:'S(t)=5000\times1.65^t', acceptedAnswers:['40','40.0'], exact:true, hints:h([
         'El tiempo total es 2 horas más una cantidad de minutos. ¿En qué unidad está expresado \(t\)?',
         'Primero encuentra el tiempo total en horas usando \(S(t)=19000\).',
         'Resuelve \(5000(1.65)^t=19000\). Luego separa la parte entera de las horas y convierte la parte decimal a minutos multiplicando por 60.',

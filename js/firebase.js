@@ -3,6 +3,7 @@ import {
   getFirestore,
   collection,
   getDocs,
+  getDoc,
   query,
   where,
   doc,
@@ -77,6 +78,28 @@ export async function loadActiveStudents(section) {
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 }
 
+export async function loadProgressFromFirestore(studentId) {
+  if (!studentId) return {};
+  await ensureAnonymousAuth();
+
+  const questionsRef = collection(
+    db,
+    ...ASSESSMENT_PATH,
+    'estudiantes',
+    studentId,
+    'preguntas'
+  );
+
+  const snapshot = await getDocs(questionsRef);
+  const progress = {};
+  snapshot.forEach((questionDoc) => {
+    const data = questionDoc.data();
+    const { updatedAt, studentId: storedStudentId, studentName, section, questionId, ...savedProgress } = data;
+    progress[`${studentId}_${questionDoc.id}`] = savedProgress;
+  });
+  return progress;
+}
+
 export async function saveAttemptToFirestore({
   student,
   section,
@@ -108,6 +131,7 @@ export async function saveAttemptToFirestore({
   await addDoc(attemptsRef, {
     studentId: student.id,
     studentName: student.name,
+    origin: student.origin || null,
     section,
     questionId,
     subquestionId,
@@ -138,6 +162,7 @@ export async function saveProgressToFirestore({ student, section, questionId, pr
   await setDoc(progressRef, {
     studentId: student.id,
     studentName: student.name,
+    origin: student.origin || null,
     section,
     questionId,
     ...progress,

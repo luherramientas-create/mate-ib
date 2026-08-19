@@ -58,6 +58,26 @@ function isAccepted(value, subquestion) {
   });
 }
 
+function renderMath(container) {
+  if (!container) return;
+  const typeset = () => {
+    if (!window.MathJax?.typesetPromise) return false;
+    window.MathJax.typesetClear?.([container]);
+    window.MathJax.typesetPromise([container]).catch((error) => console.error('MathJax:', error));
+    return true;
+  };
+
+  if (typeset()) return;
+
+  let tries = 0;
+  const waitForMathJax = () => {
+    if (typeset() || tries >= 40) return;
+    tries += 1;
+    window.setTimeout(waitForMathJax, 50);
+  };
+  waitForMathJax();
+}
+
 async function setSection(section) {
   state.section = section;
   const list = $('#student-list');
@@ -153,7 +173,7 @@ function renderSubquestion() {
       <div id="feedback-area"></div>
     </div>
   `;
-  window.MathJax?.typesetPromise?.([content]);
+  renderMath(content);
   $('#check-answer').addEventListener('click', checkAnswer);
   $('#answer-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') checkAnswer();
@@ -226,6 +246,7 @@ async function checkAnswer() {
     feedback.innerHTML = `<div class="feedback success">✓ Correcto.<br><strong>${autonomyLabel(state.attempts)}</strong><br>Resultado: ${score} %.</div>`;
     await persistProgress(state.currentQuestion.id);
     renderNextButton(feedback);
+    renderMath(feedback);
     return;
   }
 
@@ -237,9 +258,10 @@ async function checkAnswer() {
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Pista ${hint.level}</strong><div>${hint.text}</div></div>`);
     saveLocalProgress();
     await persistProgress(state.currentQuestion.id);
-    window.MathJax?.typesetPromise?.([feedback]);
+    renderMath(feedback);
   } else {
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Última orientación</strong><div>Revisa las pistas anteriores y vuelve a intentarlo con calma.</div></div>`);
+    renderMath(feedback);
   }
 }
 

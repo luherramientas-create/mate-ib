@@ -17,7 +17,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyCjE7kpwMZcFRVJsJcWPIQwEzgH-YrcXk0',
+  apiKey: 'AIzaSyCjE7kpwMZcFRVJsJcWPIQwEzgH-YrcXkXk',
   authDomain: 'registro-edu-aa4c8.firebaseapp.com',
   projectId: 'registro-edu-aa4c8',
   storageBucket: 'registro-edu-aa4c8.firebasestorage.app',
@@ -66,9 +66,9 @@ function writeLocalProgress(progress) {
   localStorage.setItem(LOCAL_PROGRESS_KEY, JSON.stringify(progress));
 }
 
-// No asumimos que un registro es antiguo = sincronizado.
-// Solo se considera confirmado si ya tiene `synced: true` o un `syncId`
-// generado por una escritura confirmada en Firebase.
+// Solo marcamos como confirmados los intentos que tienen evidencia local
+// de una escritura confirmada previamente (`syncId`). Nunca asumimos que
+// un registro antiguo está sincronizado solamente por su antigüedad.
 function initializeIncrementalSyncState() {
   const progress = readLocalProgress();
   let changed = false;
@@ -77,7 +77,6 @@ function initializeIncrementalSyncState() {
     Object.values(questionProgress?.completedParts || {}).forEach((part) => {
       (part.history || []).forEach((entry) => {
         if (!entry || typeof entry !== 'object') return;
-
         if (entry.synced !== true && entry.syncId) {
           entry.synced = true;
           changed = true;
@@ -166,6 +165,32 @@ export async function loadActiveStudents(section) {
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 }
 
+// Reconciliación NO destructiva del progreso local con Firebase.
+// Si el documento ya existe, merge=true conserva sus campos y actualiza
+// únicamente los valores que el navegador conoce. Si no existe, se crea.
+async function syncLocalProgressDocuments(studentId, identity) {
+  const progress = readLocalProgress();
+  const prefix = `${studentId}_`;
+
+  for (const [key, questionProgress] of Object.entries(progress)) {
+    if (!key.startsWith(prefix)) continue;
+
+    const questionId = key.slice(prefix.length);
+    if (!questionId || !questionProgress || typeof questionProgress !== 'object') continue;
+
+    try {
+      await saveProgressToFirestore({
+        student: identity,
+        section: identity.section,
+        questionId,
+        progress: questionProgress
+      });
+    } catch (error) {
+      console.error(`Firebase / progreso pendiente ${questionId}:`, error);
+    }
+  }
+}
+
 async function syncPendingLocalAttempts(studentId) {
   const progress = readLocalProgress();
   const identity = await findStudentIdentity(studentId);
@@ -187,7 +212,7 @@ async function syncPendingLocalAttempts(studentId) {
         const attemptNumber = index + 1;
         const timeSpent = part.timeSpent ?? null;
         const correct = Boolean(entry.correct);
-        const score = calculateHistoricalScore(attemptNumber, correct);
+        const score = entry.score ?? calculateHistoricalScore(attemptNumber, correct);
 
         try {
           await saveAttemptToFirestore({
@@ -198,27 +223,33 @@ async function syncPendingLocalAttempts(studentId) {
             answer: entry.answer ?? '',
             correct,
             attemptNumber,
-            hintsUsed: 0,
-            highestHintLevel: 0,
-            hintTypes: [],
+            hintsUsed: entry.hintsUsed ?? 0,
+            highestHintLevel: entry.highestHintLevel ?? 0,
+            hintTypes: entry.hintTypes ?? [],
             score,
             timeSpent
           });
         } catch (error) {
-          console.error('Firebase / sincronización pendiente:', error);
+          console.error(`Firebase / intento pendiente ${questionId}/${subquestionId}/${attemptNumber}:`, error);
         }
       }
     }
   }
 }
 
-// Anonymous clients do not read assessment data back from Firestore.
-// Al seleccionar al estudiante, esta función sincroniza únicamente intentos
-// locales que todavía no tienen `synced: true`.
+// Los clientes anónimos no leen resultados de evaluación desde Firestore.
+// Al seleccionar al estudiante, la aplicación reconcilia el progreso local
+// y después envía únicamente los intentos que todavía no están confirmados.
 export async function loadProgressFromFirestore(studentId) {
   await ensureAnonymousAuth();
   initializeIncrementalSyncState();
-  await syncPendingLocalAttempts(studentId);
+
+  const identity = await findStudentIdentity(studentId);
+  if (identity) {
+    await syncLocalProgressDocuments(studentId, identity);
+    await syncPendingLocalAttempts(studentId);
+  }
+
   return {};
 }
 

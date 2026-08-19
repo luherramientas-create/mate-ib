@@ -36,6 +36,13 @@ function calculateScore(attempts) {
   return 90;
 }
 
+function autonomyLabel(attempts) {
+  if (attempts <= 1) return '🟢 Lo resolviste de forma independiente';
+  if (attempts === 2) return '🟡 Necesitaste una pequeña orientación';
+  if (attempts === 3) return '🟠 Necesitaste apoyo para desarrollar el procedimiento';
+  return '🔵 Necesitaste una guía paso a paso';
+}
+
 function normalizeAnswer(value) {
   return value.toLowerCase().replace(/\s+/g, '').replace(',', '.').replace('％', '%');
 }
@@ -146,7 +153,7 @@ function renderSubquestion() {
       <div id="feedback-area"></div>
     </div>
   `;
-  window.MathJax?.typesetPromise?.();
+  window.MathJax?.typesetPromise?.([content]);
   $('#check-answer').addEventListener('click', checkAnswer);
   $('#answer-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') checkAnswer();
@@ -216,7 +223,7 @@ async function checkAnswer() {
     const score = calculateScore(state.attempts);
     part.score = score;
     part.completed = true;
-    feedback.innerHTML = `<div class="feedback success">✓ Correcto. ${state.attempts === 1 ? 'Lo resolviste de forma independiente.' : `Resultado: ${score} %.`}</div>`;
+    feedback.innerHTML = `<div class="feedback success">✓ Correcto.<br><strong>${autonomyLabel(state.attempts)}</strong><br>Resultado: ${score} %.</div>`;
     await persistProgress(state.currentQuestion.id);
     renderNextButton(feedback);
     return;
@@ -230,6 +237,7 @@ async function checkAnswer() {
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Pista ${hint.level}</strong><div>${hint.text}</div></div>`);
     saveLocalProgress();
     await persistProgress(state.currentQuestion.id);
+    window.MathJax?.typesetPromise?.([feedback]);
   } else {
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Última orientación</strong><div>Revisa las pistas anteriores y vuelve a intentarlo con calma.</div></div>`);
   }

@@ -42,12 +42,12 @@ const INSTITUTION_PATH = [
 ];
 
 // Canonical assessment root:
-// evaluaciones/2026/funcionesExponenciales/estudiantes/{studentId}/preguntas/{questionId}/...
+// evaluaciones/2026/funcionesExponenciales/{studentId}/preguntas/{questionId}/...
+// `funcionesExponenciales` is a collection and `{studentId}` is its document.
 const ASSESSMENT_PATH = [
   'evaluaciones',
   '2026',
-  'funcionesExponenciales',
-  'estudiantes'
+  'funcionesExponenciales'
 ];
 
 let authReady = false;
@@ -90,8 +90,7 @@ export async function loadActiveStudents(section) {
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 }
 
-// The student app keeps progress locally. Firestore is the teacher-facing
-// record of attempts and progress; anonymous clients do not read assessment data back.
+// Anonymous clients do not read assessment data back from Firestore.
 export async function loadProgressFromFirestore(studentId) {
   return {};
 }

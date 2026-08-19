@@ -77,11 +77,19 @@ export async function loadActiveStudents(section) {
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 }
 
-// Student progress is kept in localStorage for the student app.
-// Firestore remains the teacher-facing record of attempts and progress,
-// but anonymous clients do not need to read assessment data back.
+// The student app keeps progress locally. Firestore is the teacher-facing
+// record of attempts and progress; anonymous clients do not read assessment data back.
 export async function loadProgressFromFirestore(studentId) {
   return {};
+}
+
+// Returns the authenticated anonymous UID that will be attached to every
+// assessment write. This is an identity foundation for the next security phase;
+// it is NOT treated as authorization until Security Rules validate the relationship.
+export async function getAnonymousUid() {
+  const user = await ensureAnonymousAuth();
+  if (!user?.uid) throw new Error('No fue posible obtener el UID anónimo.');
+  return user.uid;
 }
 
 export async function saveAttemptToFirestore({
@@ -98,7 +106,7 @@ export async function saveAttemptToFirestore({
   score,
   timeSpent
 }) {
-  await ensureAnonymousAuth();
+  const authUid = await getAnonymousUid();
 
   const attemptsRef = collection(
     db,
@@ -127,12 +135,13 @@ export async function saveAttemptToFirestore({
     hintTypes,
     score: score ?? null,
     timeSpent: timeSpent ?? null,
+    authUid,
     createdAt: serverTimestamp()
   });
 }
 
 export async function saveProgressToFirestore({ student, section, questionId, progress }) {
-  await ensureAnonymousAuth();
+  const authUid = await getAnonymousUid();
 
   const progressRef = doc(
     db,
@@ -150,6 +159,7 @@ export async function saveProgressToFirestore({ student, section, questionId, pr
     section,
     questionId,
     ...progress,
+    authUid,
     updatedAt: serverTimestamp()
   }, { merge: true });
 }

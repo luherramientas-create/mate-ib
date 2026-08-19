@@ -50,13 +50,10 @@ function normalizeAnswer(value) {
 function isAccepted(value, subquestion) {
   const answer = normalizeAnswer(value);
   const accepted = subquestion.acceptedAnswers || [];
-
   if (accepted.some((item) => answer === normalizeAnswer(item))) return true;
   if (subquestion.exact) return false;
-
   const numericAnswer = Number(answer.replace('%', ''));
   if (!Number.isFinite(numericAnswer)) return false;
-
   const tolerance = Number.isFinite(subquestion.tolerance) ? subquestion.tolerance : 0.02;
   return accepted.some((item) => {
     const normalized = normalizeAnswer(item);
@@ -73,9 +70,7 @@ function renderMath(container) {
     window.MathJax.typesetPromise([container]).catch((error) => console.error('MathJax:', error));
     return true;
   };
-
   if (typeset()) return;
-
   let tries = 0;
   const waitForMathJax = () => {
     if (typeset() || tries >= 40) return;
@@ -91,23 +86,19 @@ async function setSection(section) {
   const form = $('#guest-form');
   list.innerHTML = '';
   form.classList.toggle('hidden', section !== 'invitado');
-
   if (section === 'invitado') {
     $('#student-help').textContent = 'Completa tus datos para continuar.';
     showScreen('student-screen');
     return;
   }
-
   $('#student-help').textContent = `Cargando estudiantes activos de ${section}…`;
   showScreen('student-screen');
-
   try {
     const students = await loadActiveStudents(section);
     if (!students.length) {
       $('#student-help').textContent = `No se encontraron estudiantes activos en ${section}.`;
       return;
     }
-
     $('#student-help').textContent = `Selecciona tu nombre (${students.length} estudiantes activos).`;
     students.forEach((student) => {
       const button = document.createElement('button');
@@ -130,17 +121,21 @@ function selectStudent(student) {
   showScreen('questions-screen');
 }
 
+function getQuestionState(questionId) {
+  const saved = state.progress[progressKey(questionId)];
+  if (saved?.completed) return '🟢 Completada';
+  if (saved?.inProgress) return '🟡 En progreso';
+  return '⚪ Sin iniciar';
+}
+
 function renderQuestionMenu() {
   const grid = $('#question-grid');
   grid.innerHTML = '';
   QUESTIONS.forEach((question) => {
-    const key = progressKey(question.id);
-    const saved = state.progress[key];
     const button = document.createElement('button');
     button.className = 'question-btn';
-    const stateText = saved?.completed ? '🟢 Completada' : saved?.inProgress ? '🟡 En progreso' : '⚪ Sin iniciar';
     const available = question.subquestions.length > 0;
-    button.innerHTML = `<span class="question-number">${question.id.replace('P0', '')}</span><span>${question.topic}</span><span class="question-state">${stateText}</span>`;
+    button.innerHTML = `<span class="question-number">${question.id.replace('P0', '')}</span><span>${question.topic}</span><span class="question-state">${getQuestionState(question.id)}</span>`;
     button.disabled = !available;
     button.title = available ? 'Abrir pregunta' : 'Pregunta no disponible';
     if (available) button.addEventListener('click', () => openQuestion(question));
@@ -148,15 +143,50 @@ function renderQuestionMenu() {
   });
 }
 
-function openQuestion(question) {
+function openQuestion(question, resume = false) {
   if (!question.subquestions.length) return;
   state.currentQuestion = question;
-  state.currentSubquestionIndex = 0;
-  state.attempts = 0;
-  state.hintsUsed = 0;
+  const saved = state.progress[progressKey(question.id)];
+  const savedParts = saved?.completedParts || {};
+  const firstIncomplete = question.subquestions.findIndex((sub) => !savedParts[sub.id]?.completed);
+  state.currentSubquestionIndex = resume && firstIncomplete >= 0 ? firstIncomplete : 0;
+  state.attempts = savedParts[question.subquestions[state.currentSubquestionIndex].id]?.attempts || 0;
+  state.hintsUsed = savedParts[question.subquestions[state.currentSubquestionIndex].id]?.hints?.length || 0;
   state.startedAt = Date.now();
+  if (!state.progress[progressKey(question.id)]) state.progress[progressKey(question.id)] = { completedParts: {}, inProgress: true };
+  state.progress[progressKey(question.id)].inProgress = true;
+  saveLocalProgress();
   renderSubquestion();
   showScreen('question-screen');
+}
+
+function renderQuestionSidebar() {
+  return `
+    <aside class="question-sidebar" aria-label="Navegación de preguntas">
+      <div class="sidebar-title">Preguntas</div>
+      <div class="sidebar-list">
+        ${QUESTIONS.map((question) => {
+          const available = question.subquestions.length > 0;
+          const current = state.currentQuestion?.id === question.id;
+          return `<button class="sidebar-question ${current ? 'current' : ''}" data-question-id="${question.id}" ${available ? '' : 'disabled'}>
+            <span class="sidebar-number">${question.id.replace('P0', '')}</span>
+            <span class="sidebar-status">${getQuestionState(question.id)}</span>
+          </button>`;
+        }).join('')}
+      </div>
+    </aside>
+  `;
+}
+
+function bindQuestionSidebar() {
+  document.querySelectorAll('.sidebar-question:not(:disabled)').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const question = QUESTIONS.find((item) => item.id === button.dataset.questionId);
+      if (!question) return;
+      await persistProgress(state.currentQuestion?.id);
+      openQuestion(question, true);
+    });
+  });
 }
 
 function renderSubquestion() {
@@ -168,20 +198,51 @@ function renderSubquestion() {
 
   $('#question-status').textContent = `Parte ${progressText}`;
   content.innerHTML = `
-    <p class="eyebrow">${question.title} · ${progressText}</p>
-    <div class="question-body">
-      <div class="question-context">${question.context || ''}</div>
-      <div class="question-label">${sub.label}</div>
-      <p>${sub.prompt}</p>
-      <div class="math-block">\\(${sub.equation}\\)</div>
-      <div class="answer-row">
-        <input id="answer-input" inputmode="text" autocomplete="off" placeholder="Escribe tu respuesta">
-        <button class="primary-btn" id="check-answer">Comprobar</button>
+    <div class="question-workspace">
+      ${renderQuestionSidebar()}
+      <div class="question-main">
+        <div class="mobile-question-nav">
+          <button class="mobile-nav-toggle" id="mobile-question-toggle" type="button" aria-expanded="false">☰ Preguntas</button>
+          <div id="mobile-question-menu" class="mobile-question-menu hidden"></div>
+        </div>
+        <p class="eyebrow">${question.title} · ${progressText}</p>
+        <div class="question-body">
+          <div class="question-context">${question.context || ''}</div>
+          <div class="question-label">${sub.label}</div>
+          <p>${sub.prompt}</p>
+          <div class="math-block">\\(${sub.equation}\\)</div>
+          <div class="answer-row">
+            <input id="answer-input" inputmode="text" autocomplete="off" placeholder="Escribe tu respuesta">
+            <button class="primary-btn" id="check-answer">Comprobar</button>
+          </div>
+          <div id="feedback-area"></div>
+        </div>
       </div>
-      <div id="feedback-area"></div>
     </div>
   `;
+
   renderMath(content);
+  bindQuestionSidebar();
+
+  const mobileToggle = $('#mobile-question-toggle');
+  const mobileMenu = $('#mobile-question-menu');
+  mobileMenu.innerHTML = QUESTIONS.map((item) => {
+    const available = item.subquestions.length > 0;
+    return `<button class="mobile-question-item ${state.currentQuestion.id === item.id ? 'current' : ''}" data-question-id="${item.id}" ${available ? '' : 'disabled'}>${item.id.replace('P0', '')} · ${item.topic} · ${getQuestionState(item.id)}</button>`;
+  }).join('');
+  mobileToggle.addEventListener('click', () => {
+    const isHidden = mobileMenu.classList.toggle('hidden');
+    mobileToggle.setAttribute('aria-expanded', String(!isHidden));
+  });
+  mobileMenu.querySelectorAll('.mobile-question-item:not(:disabled)').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const next = QUESTIONS.find((item) => item.id === button.dataset.questionId);
+      if (!next) return;
+      await persistProgress(state.currentQuestion?.id);
+      openQuestion(next, true);
+    });
+  });
+
   $('#check-answer').addEventListener('click', checkAnswer);
   $('#answer-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') checkAnswer();
@@ -198,7 +259,6 @@ async function recordAttempt(sub, answer, correct) {
   part.timeSpent = Math.round((Date.now() - state.startedAt) / 1000);
   state.progress[key].completedParts[sub.id] = part;
   saveLocalProgress();
-
   try {
     await saveAttemptToFirestore({
       student: state.student,
@@ -217,11 +277,11 @@ async function recordAttempt(sub, answer, correct) {
   } catch (error) {
     console.error('Firebase / intento:', error);
   }
-
   return part;
 }
 
 async function persistProgress(questionId) {
+  if (!questionId) return;
   const key = progressKey(questionId);
   saveLocalProgress();
   try {
@@ -241,7 +301,6 @@ async function checkAnswer() {
   const input = $('#answer-input');
   const answer = input.value.trim();
   if (!answer) return;
-
   state.attempts += 1;
   const correct = isAccepted(answer, sub);
   const part = await recordAttempt(sub, answer, correct);
@@ -302,7 +361,8 @@ function renderNextButton(container) {
 }
 
 $('#back-to-section').addEventListener('click', () => showScreen('section-screen'));
-$('#back-to-questions').addEventListener('click', () => {
+$('#back-to-questions').addEventListener('click', async () => {
+  await persistProgress(state.currentQuestion?.id);
   renderQuestionMenu();
   showScreen('questions-screen');
 });

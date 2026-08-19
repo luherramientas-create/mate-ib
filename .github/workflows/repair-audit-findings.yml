@@ -1,0 +1,110 @@
+name: Repair audit findings
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply audited repairs
+        id: repair
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          changed = []
+
+          # 1) Fix the known P04(e) validation bug.
+          q = Path('js/questions.js')
+          text = q.read_text(encoding='utf-8')
+          old = "acceptedAnswers:['40','39.95','39.9521','39'], tolerance:0.02"
+          new = "acceptedAnswers:['40','40.0'], exact:true"
+          if old in text:
+              text = text.replace(old, new, 1)
+              changed.append('js/questions.js: P04(e) validation')
+          elif "acceptedAnswers:['40','40.0'], exact:true" not in text:
+              raise SystemExit('Expected P04(e) validation pattern was not found; refusing an unsafe edit.')
+
+          # 2) Harden the interpretation check in P04(a)(ii) by adding
+          # semantic keywords while retaining the existing accepted answers.
+          old_p04 = "acceptedAnswers:['la población inicial de bacterias','la poblacion inicial de bacterias','población inicial de bacterias','poblacion inicial']"
+          new_p04 = "acceptedAnswers:['la población inicial de bacterias','la poblacion inicial de bacterias','población inicial de bacterias','poblacion inicial','1200 es la población inicial','1200 es la poblacion inicial'], conceptualKeywords:['poblacion','inicial','bacterias']"
+          if old_p04 in text:
+              text = text.replace(old_p04, new_p04, 1)
+              changed.append('js/questions.js: P04(a)(ii) interpretation keywords')
+
+          q.write_text(text, encoding='utf-8')
+
+          # 3) Add semantic keyword support to answer validation without
+          # changing the behavior of numeric questions.
+          a = Path('js/app.js')
+          app = a.read_text(encoding='utf-8')
+
+          old_import = "import { loadActiveStudents, saveAttemptToFirestore, saveProgressToFirestore } from './firebase.js';"
+          new_import = "import { loadActiveStudents, loadProgressFromFirestore, saveAttemptToFirestore, saveProgressToFirestore } from './firebase.js';"
+          if old_import in app:
+              app = app.replace(old_import, new_import, 1)
+              changed.append('js/app.js: Firebase progress import')
+
+          old_select = """function selectStudent(student) {\n  state.student = { ...student, section: state.section };\n  $('#student-badge').textContent = `${student.name} · ${state.section}`;\n  renderQuestionMenu();\n  showScreen('questions-screen');\n}"""
+          new_select = """async function selectStudent(student) {\n  state.student = { ...student, section: state.section };\n  $('#student-badge').textContent = `${student.name} · ${state.section}`;\n\n  try {\n    const remoteProgress = await loadProgressFromFirestore(student.id);\n    if (remoteProgress && Object.keys(remoteProgress).length) {\n      state.progress = { ...state.progress, ...remoteProgress };\n      saveLocalProgress();\n    }\n  } catch (error) {\n    console.error('Firebase / recuperar progreso:', error);\n  }\n\n  renderQuestionMenu();\n  showScreen('questions-screen');\n}"""
+          if old_select in app:
+              app = app.replace(old_select, new_select, 1)
+              changed.append('js/app.js: restore progress from Firestore')
+          elif "const remoteProgress = await loadProgressFromFirestore(student.id);" not in app:
+              raise SystemExit('Expected selectStudent block was not found; refusing an unsafe edit.')
+
+          # Semantic validation for open interpretation items.
+          old_norm = "function normalizeAnswer(value) {\n  return String(value).toLowerCase().replace(/\\s+/g, '').replace(',', '.').replace('％', '%');\n}"
+          new_norm = """function normalizeAnswer(value) {\n  return String(value).toLowerCase().replace(/\\s+/g, '').replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i').replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u').replace('ñ', 'n').replace(',', '.').replace('％', '%');\n}\n\nfunction hasConceptualKeywords(value, keywords = []) {\n  if (!keywords.length) return false;\n  const normalized = normalizeAnswer(value);\n  return keywords.every((keyword) => normalized.includes(normalizeAnswer(keyword)));\n}"""
+          if old_norm in app:
+              app = app.replace(old_norm, new_norm, 1)
+              changed.append('js/app.js: interpretation normalization')
+
+          old_is = """function isAccepted(value, subquestion) {\n  const answer = normalizeAnswer(value);\n  const accepted = subquestion.acceptedAnswers || [];\n  if (accepted.some((item) => answer === normalizeAnswer(item))) return true;\n  if (subquestion.exact) return false;"""
+          new_is = """function isAccepted(value, subquestion) {\n  const answer = normalizeAnswer(value);\n  const accepted = subquestion.acceptedAnswers || [];\n  if (accepted.some((item) => answer === normalizeAnswer(item))) return true;\n  if (hasConceptualKeywords(value, subquestion.conceptualKeywords)) return true;\n  if (subquestion.exact) return false;"""
+          if old_is in app:
+              app = app.replace(old_is, new_is, 1)
+              changed.append('js/app.js: conceptual keyword validation')
+
+          # Prevent a completed subquestion from changing its official result
+          # if a student opens it again.
+          old_check = """async function checkAnswer() {\n  const sub = state.currentQuestion.subquestions[state.currentSubquestionIndex];\n  const input = $('#answer-input');\n  const answer = input.value.trim();\n  if (!answer) return;"""
+          new_check = """async function checkAnswer() {\n  const sub = state.currentQuestion.subquestions[state.currentSubquestionIndex];\n  const key = progressKey(state.currentQuestion.id);\n  const existingPart = state.progress[key]?.completedParts?.[sub.id];\n  const feedback = $('#feedback-area');\n  if (existingPart?.completed) {\n    feedback.innerHTML = '<div class=\"feedback success\">✓ Esta parte ya fue completada. El resultado original se conserva.</div>';\n    return;\n  }\n  const input = $('#answer-input');\n  const answer = input.value.trim();\n  if (!answer) return;"""
+          if old_check in app:
+              app = app.replace(old_check, new_check, 1)
+              changed.append('js/app.js: protect completed results')
+
+          # The original function declared feedback later; remove the duplicate
+          # declaration introduced by the guard replacement.
+          app = app.replace("  const feedback = $('#feedback-area');\n\n  if (correct) {", "\n  if (correct) {", 1)
+
+          a.write_text(app, encoding='utf-8')
+
+          print('Repairs:', ', '.join(changed) if changed else 'none')
+          if not changed:
+              print('All requested repairs were already present.')
+
+      - name: Commit repaired files
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/questions.js js/app.js
+          git commit -m "Repair audited assessment findings"
+          git push

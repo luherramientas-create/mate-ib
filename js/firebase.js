@@ -42,11 +42,12 @@ const INSTITUTION_PATH = [
 ];
 
 // Canonical assessment root:
-// evaluaciones/{year}/funcionesExponenciales/{studentId}/preguntas/{questionId}/...
+// evaluaciones/2026/funcionesExponenciales/estudiantes/{studentId}/preguntas/{questionId}/...
 const ASSESSMENT_PATH = [
   'evaluaciones',
   '2026',
-  'funcionesExponenciales'
+  'funcionesExponenciales',
+  'estudiantes'
 ];
 
 let authReady = false;

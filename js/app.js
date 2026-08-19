@@ -44,17 +44,24 @@ function autonomyLabel(attempts) {
 }
 
 function normalizeAnswer(value) {
-  return value.toLowerCase().replace(/\s+/g, '').replace(',', '.').replace('％', '%');
+  return String(value).toLowerCase().replace(/\s+/g, '').replace(',', '.').replace('％', '%');
 }
 
 function isAccepted(value, subquestion) {
   const answer = normalizeAnswer(value);
-  return subquestion.acceptedAnswers.some((accepted) => {
-    const normalized = normalizeAnswer(accepted);
-    if (answer === normalized) return true;
-    const numericAnswer = Number(answer.replace('%', ''));
+  const accepted = subquestion.acceptedAnswers || [];
+
+  if (accepted.some((item) => answer === normalizeAnswer(item))) return true;
+  if (subquestion.exact) return false;
+
+  const numericAnswer = Number(answer.replace('%', ''));
+  if (!Number.isFinite(numericAnswer)) return false;
+
+  const tolerance = Number.isFinite(subquestion.tolerance) ? subquestion.tolerance : 0.02;
+  return accepted.some((item) => {
+    const normalized = normalizeAnswer(item);
     const numericAccepted = Number(normalized.replace('%', ''));
-    return Number.isFinite(numericAnswer) && Number.isFinite(numericAccepted) && Math.abs(numericAnswer - numericAccepted) < 0.02;
+    return Number.isFinite(numericAccepted) && Math.abs(numericAnswer - numericAccepted) <= tolerance;
   });
 }
 
@@ -132,10 +139,11 @@ function renderQuestionMenu() {
     const button = document.createElement('button');
     button.className = 'question-btn';
     const stateText = saved?.completed ? '🟢 Completada' : saved?.inProgress ? '🟡 En progreso' : '⚪ Sin iniciar';
+    const available = question.subquestions.length > 0;
     button.innerHTML = `<span class="question-number">${question.id.replace('P0', '')}</span><span>${question.topic}</span><span class="question-state">${stateText}</span>`;
-    button.disabled = question.id !== 'P01';
-    button.title = question.id === 'P01' ? 'Abrir pregunta' : 'Esta pregunta se incorporará próximamente.';
-    button.addEventListener('click', () => openQuestion(question));
+    button.disabled = !available;
+    button.title = available ? 'Abrir pregunta' : 'Pregunta no disponible';
+    if (available) button.addEventListener('click', () => openQuestion(question));
     grid.appendChild(button);
   });
 }
@@ -167,7 +175,7 @@ function renderSubquestion() {
       <p>${sub.prompt}</p>
       <div class="math-block">\\(${sub.equation}\\)</div>
       <div class="answer-row">
-        <input id="answer-input" inputmode="decimal" autocomplete="off" placeholder="Escribe tu respuesta">
+        <input id="answer-input" inputmode="text" autocomplete="off" placeholder="Escribe tu respuesta">
         <button class="primary-btn" id="check-answer">Comprobar</button>
       </div>
       <div id="feedback-area"></div>

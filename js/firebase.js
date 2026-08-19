@@ -1,11 +1,146 @@
-// Firebase integration will be configured after confirming the existing project's
-// web app configuration and Firestore rules.
-//
-// Expected responsibilities:
-// 1. Load active students from the existing institutional paths.
-// 2. Save attempts, hints, timing and progress to Firestore.
-// 3. Keep institutional student records separate from assessment records.
-// 4. Enforce appropriate Firestore security rules.
-//
-// Do not place Firebase API keys or project-specific configuration here until
-// the existing Firebase project configuration has been confirmed.
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js';
+import {
+  getFirestore,
+  collection,
+  getDocs,
+  query,
+  where,
+  doc,
+  setDoc,
+  addDoc,
+  serverTimestamp
+} from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js';
+import {
+  getAuth,
+  signInAnonymously
+} from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js';
+
+const firebaseConfig = {
+  apiKey: 'AIzaSyCjE7kpwMZcFRVJsJcWPIQwEzgH-YrcXk0',
+  authDomain: 'registro-edu-aa4c8.firebaseapp.com',
+  projectId: 'registro-edu-aa4c8',
+  storageBucket: 'registro-edu-aa4c8.firebasestorage.app',
+  messagingSenderId: '1032924835108',
+  appId: '1:1032924835108:web:f21d00c988d9898b3497b1'
+};
+
+const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app);
+export const auth = getAuth(app);
+
+const INSTITUTION_PATH = [
+  'instituciones',
+  'liceoCariari',
+  'cursosLectivos',
+  '2026',
+  'modalidades',
+  'bachilleratoInternacional',
+  'niveles',
+  '11',
+  'secciones'
+];
+
+const ASSESSMENT_PATH = [
+  'evaluaciones',
+  '2026',
+  'funcionesExponenciales'
+];
+
+let authReady = false;
+
+export async function ensureAnonymousAuth() {
+  if (authReady || auth.currentUser) {
+    authReady = true;
+    return auth.currentUser;
+  }
+  const credential = await signInAnonymously(auth);
+  authReady = true;
+  return credential.user;
+}
+
+export async function loadActiveStudents(section) {
+  await ensureAnonymousAuth();
+
+  const studentsRef = collection(db, ...INSTITUTION_PATH, section, 'estudiantes');
+  const studentsQuery = query(studentsRef, where('estado', '==', 'activo'));
+  const snapshot = await getDocs(studentsQuery);
+
+  return snapshot.docs
+    .map((studentDoc) => {
+      const data = studentDoc.data();
+      return {
+        id: studentDoc.id,
+        name: [data.nombre, data.ap1, data.ap2].filter(Boolean).join(' '),
+        cedulaDisplay: data.cedulaDisplay || data.cedula || ''
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+}
+
+export async function saveAttemptToFirestore({
+  student,
+  section,
+  questionId,
+  subquestionId,
+  answer,
+  correct,
+  attemptNumber,
+  hintsUsed,
+  highestHintLevel,
+  hintTypes,
+  score,
+  timeSpent
+}) {
+  await ensureAnonymousAuth();
+
+  const attemptsRef = collection(
+    db,
+    ...ASSESSMENT_PATH,
+    'estudiantes',
+    student.id,
+    'preguntas',
+    questionId,
+    'subpreguntas',
+    subquestionId,
+    'intentos'
+  );
+
+  await addDoc(attemptsRef, {
+    studentId: student.id,
+    studentName: student.name,
+    section,
+    questionId,
+    subquestionId,
+    answer,
+    correct,
+    attemptNumber,
+    hintsUsed,
+    highestHintLevel,
+    hintTypes,
+    score: score ?? null,
+    timeSpent: timeSpent ?? null,
+    createdAt: serverTimestamp()
+  });
+}
+
+export async function saveProgressToFirestore({ student, section, questionId, progress }) {
+  await ensureAnonymousAuth();
+
+  const progressRef = doc(
+    db,
+    ...ASSESSMENT_PATH,
+    'estudiantes',
+    student.id,
+    'preguntas',
+    questionId
+  );
+
+  await setDoc(progressRef, {
+    studentId: student.id,
+    studentName: student.name,
+    section,
+    questionId,
+    ...progress,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}

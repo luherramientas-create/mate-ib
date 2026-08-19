@@ -1,5 +1,5 @@
 // Normaliza comandos LaTeX que pueden perder la barra invertida antes de que MathJax los procese.
-// La reparación es deliberadamente conservadora: solo actúa sobre comandos conocidos.
+// La reparación es deliberadamente conservadora: solo actúa sobre comandos y variables matemáticas conocidos.
 (() => {
   const restoreMathCommands = (value) => {
     if (!value) return value;
@@ -12,7 +12,8 @@
       .replace(/(?<!\\)div(?=\\s|[0-9A-Za-z(])/g, '\\div')
       .replace(/(?<!\\)leq(?=\\s|[0-9A-Za-z])/g, '\\leq')
       .replace(/(?<!\\)geq(?=\\s|[0-9A-Za-z])/g, '\\geq')
-      .replace(/(?<!\\)approx(?=\\s|[0-9A-Za-z])/g, '\\approx');
+      .replace(/(?<!\\)approx(?=\\s|[0-9A-Za-z])/g, '\\approx')
+      .replace(/(?<![A-Za-z\\])\(([tknmPSTkab])\)(?=\s|[.,;:])/g, '\\($1\\)');
   };
 
   const normalize = (root) => {

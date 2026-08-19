@@ -3,11 +3,11 @@ import {
   getFirestore,
   collection,
   getDocs,
+  getDoc,
   query,
   where,
   doc,
   setDoc,
-  addDoc,
   serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js';
 import {
@@ -50,7 +50,81 @@ const ASSESSMENT_PATH = [
   'funcionesExponenciales'
 ];
 
+const LOCAL_PROGRESS_KEY = 'luMateIBProgress';
+const LOCAL_SYNC_VERSION_KEY = 'luMateIBSyncVersion';
+const LOCAL_SYNC_VERSION = 'incremental-v1';
+
 let authReady = false;
+
+function readLocalProgress() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_PROGRESS_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalProgress(progress) {
+  localStorage.setItem(LOCAL_PROGRESS_KEY, JSON.stringify(progress));
+}
+
+// Los datos que ya fueron sincronizados antes de esta versión se consideran
+// confirmados. Los intentos nuevos quedan pendientes hasta que Firebase los confirme.
+function initializeIncrementalSyncState() {
+  if (localStorage.getItem(LOCAL_SYNC_VERSION_KEY) === LOCAL_SYNC_VERSION) return;
+
+  const progress = readLocalProgress();
+  Object.values(progress).forEach((questionProgress) => {
+    Object.values(questionProgress?.completedParts || {}).forEach((part) => {
+      (part.history || []).forEach((entry) => {
+        if (entry && typeof entry === 'object' && entry.synced === undefined) {
+          entry.synced = true;
+        }
+      });
+    });
+  });
+
+  writeLocalProgress(progress);
+  localStorage.setItem(LOCAL_SYNC_VERSION_KEY, LOCAL_SYNC_VERSION);
+}
+
+function markLocalAttemptSynced(studentId, questionId, subquestionId, attemptNumber, syncId) {
+  const progress = readLocalProgress();
+  const key = `${studentId}_${questionId}`;
+  const part = progress[key]?.completedParts?.[subquestionId];
+  const history = part?.history || [];
+  const entry = history[Number(attemptNumber) - 1];
+  if (!entry) return;
+
+  entry.synced = true;
+  entry.syncId = syncId;
+  writeLocalProgress(progress);
+}
+
+function calculateHistoricalScore(attemptNumber, correct) {
+  if (!correct) return null;
+  if (attemptNumber <= 1) return 100;
+  if (attemptNumber === 2) return 98;
+  if (attemptNumber === 3) return 95;
+  return 90;
+}
+
+async function findStudentIdentity(studentId) {
+  for (const section of ['11-A', '11-B']) {
+    const studentRef = doc(db, ...INSTITUTION_PATH, section, 'estudiantes', studentId);
+    const snapshot = await getDoc(studentRef);
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      return {
+        id: studentId,
+        name: [data.nombre, data.ap1, data.ap2].filter(Boolean).join(' '),
+        section,
+        origin: null
+      };
+    }
+  }
+  return null;
+}
 
 export async function ensureAnonymousAuth() {
   if (authReady && auth.currentUser?.isAnonymous) {
@@ -73,6 +147,7 @@ export async function ensureAnonymousAuth() {
 
 export async function loadActiveStudents(section) {
   await ensureAnonymousAuth();
+  initializeIncrementalSyncState();
 
   const studentsRef = collection(db, ...INSTITUTION_PATH, section, 'estudiantes');
   const studentsQuery = query(studentsRef, where('estado', '==', 'activo'));
@@ -90,8 +165,59 @@ export async function loadActiveStudents(section) {
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 }
 
+async function syncPendingLocalAttempts(studentId) {
+  const progress = readLocalProgress();
+  const identity = await findStudentIdentity(studentId);
+  if (!identity) return;
+
+  for (const [key, questionProgress] of Object.entries(progress)) {
+    if (!key.startsWith(`${studentId}_`)) continue;
+
+    const questionId = key.slice(`${studentId}_`.length);
+    const completedParts = questionProgress?.completedParts || {};
+
+    for (const [subquestionId, part] of Object.entries(completedParts)) {
+      const history = part?.history || [];
+
+      for (let index = 0; index < history.length; index += 1) {
+        const entry = history[index];
+        if (!entry || entry.synced === true) continue;
+
+        const attemptNumber = index + 1;
+        const timeSpent = part.timeSpent ?? null;
+        const correct = Boolean(entry.correct);
+        const score = calculateHistoricalScore(attemptNumber, correct);
+
+        try {
+          await saveAttemptToFirestore({
+            student: identity,
+            section: identity.section,
+            questionId,
+            subquestionId,
+            answer: entry.answer ?? '',
+            correct,
+            attemptNumber,
+            hintsUsed: 0,
+            highestHintLevel: 0,
+            hintTypes: [],
+            score,
+            timeSpent
+          });
+        } catch (error) {
+          console.error('Firebase / sincronización pendiente:', error);
+        }
+      }
+    }
+  }
+}
+
 // Anonymous clients do not read assessment data back from Firestore.
+// Al seleccionar al estudiante, esta función sincroniza únicamente intentos
+// locales que todavía no tienen `synced: true`.
 export async function loadProgressFromFirestore(studentId) {
+  await ensureAnonymousAuth();
+  initializeIncrementalSyncState();
+  await syncPendingLocalAttempts(studentId);
   return {};
 }
 
@@ -117,7 +243,10 @@ export async function saveAttemptToFirestore({
 }) {
   const authUid = await getAnonymousUid();
 
-  const attemptsRef = collection(
+  // ID determinista: si una escritura falla y se reintenta, se actualiza
+  // el mismo documento en vez de crear un intento duplicado.
+  const syncId = `attempt-${authUid}-${questionId}-${subquestionId}-${attemptNumber}`;
+  const attemptRef = doc(
     db,
     ...ASSESSMENT_PATH,
     student.id,
@@ -125,10 +254,11 @@ export async function saveAttemptToFirestore({
     questionId,
     'subpreguntas',
     subquestionId,
-    'intentos'
+    'intentos',
+    syncId
   );
 
-  await addDoc(attemptsRef, {
+  await setDoc(attemptRef, {
     studentId: student.id,
     studentName: student.name,
     origin: student.origin || null,
@@ -145,7 +275,9 @@ export async function saveAttemptToFirestore({
     timeSpent: timeSpent ?? null,
     authUid,
     createdAt: serverTimestamp()
-  });
+  }, { merge: true });
+
+  markLocalAttemptSynced(student.id, questionId, subquestionId, attemptNumber, syncId);
 }
 
 export async function saveProgressToFirestore({ student, section, questionId, progress }) {

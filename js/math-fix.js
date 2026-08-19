@@ -1,6 +1,20 @@
-// Normaliza la multiplicación en expresiones matemáticas antes de que MathJax las procese.
-// Algunas rutas de contenido pueden convertir el comando \\times en "imes".
+// Normaliza comandos LaTeX que pueden perder la barra invertida antes de que MathJax los procese.
+// La reparación es deliberadamente conservadora: solo actúa sobre comandos conocidos.
 (() => {
+  const restoreMathCommands = (value) => {
+    if (!value) return value;
+
+    return value
+      .replace(/(?<!\\)imes(?=\\s*[A-Za-z0-9(])/g, '×')
+      .replace(/(?<!\\)qquad(?=\\s*)/g, '\\qquad')
+      .replace(/(?<!\\)mathrm(?=\{)/g, '\\mathrm')
+      .replace(/(?<!\\)circ(?=\\s|\{|C|F)/g, '\\circ')
+      .replace(/(?<!\\)div(?=\\s|[0-9A-Za-z(])/g, '\\div')
+      .replace(/(?<!\\)leq(?=\\s|[0-9A-Za-z])/g, '\\leq')
+      .replace(/(?<!\\)geq(?=\\s|[0-9A-Za-z])/g, '\\geq')
+      .replace(/(?<!\\)approx(?=\\s|[0-9A-Za-z])/g, '\\approx');
+  };
+
   const normalize = (root) => {
     if (!root) return;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -10,12 +24,8 @@
 
     nodes.forEach((textNode) => {
       const value = textNode.nodeValue;
-      if (!value || (!value.includes('\\\\times') && !/\\d\\s*imes(?=\\s*[A-Za-z(])/.test(value))) return;
-
-      const fixed = value
-        .replace(/\\\\times/g, '×')
-        .replace(/(\\d)\\s*imes(?=\\s*[A-Za-z(])/g, '$1×');
-
+      if (!value) return;
+      const fixed = restoreMathCommands(value);
       if (fixed !== value) textNode.nodeValue = fixed;
     });
   };

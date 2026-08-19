@@ -12,10 +12,10 @@ export const QUESTIONS = [
         equation: 'D(t)=23(0.85)^t',
         acceptedAnswers: ['23', '23.0'],
         hints: [
-          { level: 1, type: 'conceptual', text: '¿Qué representa el valor inicial en un modelo exponencial?', display: 'small' },
-          { level: 2, type: 'interpretation', text: 'El valor inicial corresponde a la cantidad que hay cuando comienza el proceso. ¿Qué valor tiene \(t\) en ese momento?', display: 'small' },
-          { level: 3, type: 'procedural', text: 'Sustituye \(t=0\) en la expresión \(D(t)=23(0.85)^t\).', display: 'support' },
-          { level: 4, type: 'calculator', text: 'En tu Casio fx-CG50, selecciona MENU → 1 (RUN-MAT) e introduce \(23(0.85)^0\). ¿Qué resultado obtienes?', display: 'step' }
+          { level: 1, type: 'conceptual', text: 'Piensa en el momento en que comienza el proceso. ¿Qué valor tiene la variable independiente en ese instante?', display: 'small' },
+          { level: 2, type: 'interpretation', text: 'El valor inicial se obtiene cuando \(t=0\). ¿Qué ocurre con una potencia cuyo exponente es 0?', display: 'small' },
+          { level: 3, type: 'procedural', text: 'Sustituye \(t=0\) en \(D(t)=23(0.85)^t\): \[D(0)=23(0.85)^0\].', display: 'support' },
+          { level: 4, type: 'calculator', text: 'En tu Casio fx-CG50 selecciona <strong>MENU → 1 (RUN-MAT)</strong> e introduce \(23(0.85)^0\). El resultado corresponde a la dosis inicial.', display: 'step' }
         ]
       },
       {
@@ -25,10 +25,10 @@ export const QUESTIONS = [
         equation: 'D(t)=23(0.85)^t',
         acceptedAnswers: ['15', '15%', '0.15'],
         hints: [
-          { level: 1, type: 'conceptual', text: 'Observa el valor \(0.85\). ¿Es mayor o menor que 1?', display: 'small' },
-          { level: 2, type: 'interpretation', text: 'El factor \(0.85\) indica que cada hora permanece el 85 % de la cantidad anterior.', display: 'small' },
-          { level: 3, type: 'procedural', text: 'Para determinar cuánto disminuye, calcula \(1-0.85\).', display: 'support' },
-          { level: 4, type: 'interpretation', text: 'Expresa \(0.15\) como porcentaje. Recuerda que \(0.15=15\%\).', display: 'step' }
+          { level: 1, type: 'conceptual', text: 'Observa la base \(0.85\). Compárala con \(1\): ¿la cantidad está creciendo o disminuyendo?', display: 'small' },
+          { level: 2, type: 'interpretation', text: 'El factor \(0.85\) significa que cada hora permanece el \(85\%\) de la cantidad anterior. ¿Qué porcentaje falta para llegar al \(100\%\)?', display: 'small' },
+          { level: 3, type: 'procedural', text: 'Calcula la parte que disminuye: \[1-0.85=0.15.\] Ahora conviértela a porcentaje.', display: 'support' },
+          { level: 4, type: 'interpretation', text: 'Como \(0.15=15\%\), el porcentaje que abandona el organismo cada hora es \(15\%\).', display: 'step' }
         ]
       },
       {
@@ -36,11 +36,12 @@ export const QUESTIONS = [
         label: '(b)',
         prompt: 'Calcule la cantidad de medicamento que queda en el organismo 10 horas después de la inyección.',
         equation: 'D(t)=23(0.85)^t',
-        acceptedAnswers: ['4.53', '4.528', '4.5281'],
+        acceptedAnswers: ['4.53', '4.528', '4.5281', '4.52811'],
         hints: [
-          { level: 1, type: 'interpretation', text: '¿Qué valor de \(t\) necesitas utilizar para responder la pregunta?', display: 'small' },
-          { level: 2, type: 'procedural', text: 'Sustituye \(t=10\) en \(D(t)=23(0.85)^t\). Es decir, \(D(10)=23(0.85)^{10}\).', display: 'support' },
-          { level: 3, type: 'calculator', text: 'En tu Casio fx-CG50, selecciona MENU → 1 (RUN-MAT) e introduce \(23(0.85)^{10}\).', display: 'step' }
+          { level: 1, type: 'interpretation', text: '¿Qué valor de la variable independiente conocemos en esta parte?', display: 'small' },
+          { level: 2, type: 'procedural', text: 'La pregunta indica que han transcurrido 10 horas. Por tanto, debes utilizar \(t=10\).', display: 'small' },
+          { level: 3, type: 'procedural', text: 'Sustituye \(t=10\): \[D(10)=23(0.85)^{10}.\]', display: 'support' },
+          { level: 4, type: 'calculator', text: 'En tu Casio fx-CG50 selecciona <strong>MENU → 1 (RUN-MAT)</strong> e introduce \(23(0.85)^{10}\). Redondea el resultado según las indicaciones de la pregunta.', display: 'step' }
         ]
       }
     ]

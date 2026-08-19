@@ -131,16 +131,6 @@ function openQuestion(question) {
   showScreen('question-screen');
 }
 
-async function typesetMath(element) {
-  if (!window.MathJax) return;
-  try {
-    if (window.MathJax.startup?.promise) await window.MathJax.startup.promise;
-    await window.MathJax.typesetPromise?.([element]);
-  } catch (error) {
-    console.error('MathJax:', error);
-  }
-}
-
 function renderSubquestion() {
   const question = state.currentQuestion;
   const sub = question.subquestions[state.currentSubquestionIndex];
@@ -155,7 +145,7 @@ function renderSubquestion() {
       <div class="question-context">${question.context || ''}</div>
       <div class="question-label">${sub.label}</div>
       <p>${sub.prompt}</p>
-      <div class="math-block">\[${sub.equation}\]</div>
+      <div class="math-block">\\(${sub.equation}\\)</div>
       <div class="answer-row">
         <input id="answer-input" inputmode="decimal" autocomplete="off" placeholder="Escribe tu respuesta">
         <button class="primary-btn" id="check-answer">Comprobar</button>
@@ -163,7 +153,7 @@ function renderSubquestion() {
       <div id="feedback-area"></div>
     </div>
   `;
-  typesetMath(content);
+  window.MathJax?.typesetPromise?.([content]);
   $('#check-answer').addEventListener('click', checkAnswer);
   $('#answer-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') checkAnswer();
@@ -247,7 +237,7 @@ async function checkAnswer() {
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Pista ${hint.level}</strong><div>${hint.text}</div></div>`);
     saveLocalProgress();
     await persistProgress(state.currentQuestion.id);
-    typesetMath(feedback);
+    window.MathJax?.typesetPromise?.([feedback]);
   } else {
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Última orientación</strong><div>Revisa las pistas anteriores y vuelve a intentarlo con calma.</div></div>`);
   }

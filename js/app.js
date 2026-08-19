@@ -131,6 +131,16 @@ function openQuestion(question) {
   showScreen('question-screen');
 }
 
+async function typesetMath(element) {
+  if (!window.MathJax) return;
+  try {
+    if (window.MathJax.startup?.promise) await window.MathJax.startup.promise;
+    await window.MathJax.typesetPromise?.([element]);
+  } catch (error) {
+    console.error('MathJax:', error);
+  }
+}
+
 function renderSubquestion() {
   const question = state.currentQuestion;
   const sub = question.subquestions[state.currentSubquestionIndex];
@@ -153,7 +163,7 @@ function renderSubquestion() {
       <div id="feedback-area"></div>
     </div>
   `;
-  window.MathJax?.typesetPromise?.([content]);
+  typesetMath(content);
   $('#check-answer').addEventListener('click', checkAnswer);
   $('#answer-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') checkAnswer();
@@ -237,7 +247,7 @@ async function checkAnswer() {
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Pista ${hint.level}</strong><div>${hint.text}</div></div>`);
     saveLocalProgress();
     await persistProgress(state.currentQuestion.id);
-    window.MathJax?.typesetPromise?.([feedback]);
+    typesetMath(feedback);
   } else {
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Última orientación</strong><div>Revisa las pistas anteriores y vuelve a intentarlo con calma.</div></div>`);
   }

@@ -51,8 +51,6 @@ const ASSESSMENT_PATH = [
 ];
 
 const LOCAL_PROGRESS_KEY = 'luMateIBProgress';
-const LOCAL_SYNC_VERSION_KEY = 'luMateIBSyncVersion';
-const LOCAL_SYNC_VERSION = 'incremental-v1';
 
 let authReady = false;
 
@@ -68,24 +66,27 @@ function writeLocalProgress(progress) {
   localStorage.setItem(LOCAL_PROGRESS_KEY, JSON.stringify(progress));
 }
 
-// Los datos que ya fueron sincronizados antes de esta versión se consideran
-// confirmados. Los intentos nuevos quedan pendientes hasta que Firebase los confirme.
+// No asumimos que un registro es antiguo = sincronizado.
+// Solo se considera confirmado si ya tiene `synced: true` o un `syncId`
+// generado por una escritura confirmada en Firebase.
 function initializeIncrementalSyncState() {
-  if (localStorage.getItem(LOCAL_SYNC_VERSION_KEY) === LOCAL_SYNC_VERSION) return;
-
   const progress = readLocalProgress();
+  let changed = false;
+
   Object.values(progress).forEach((questionProgress) => {
     Object.values(questionProgress?.completedParts || {}).forEach((part) => {
       (part.history || []).forEach((entry) => {
-        if (entry && typeof entry === 'object' && entry.synced === undefined) {
+        if (!entry || typeof entry !== 'object') return;
+
+        if (entry.synced !== true && entry.syncId) {
           entry.synced = true;
+          changed = true;
         }
       });
     });
   });
 
-  writeLocalProgress(progress);
-  localStorage.setItem(LOCAL_SYNC_VERSION_KEY, LOCAL_SYNC_VERSION);
+  if (changed) writeLocalProgress(progress);
 }
 
 function markLocalAttemptSynced(studentId, questionId, subquestionId, attemptNumber, syncId) {

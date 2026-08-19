@@ -87,7 +87,16 @@ input:focus { outline: 3px solid var(--accent-soft); border-color: var(--accent)
 
 .question-card { min-height: 500px; }
 .question-body { margin-top: 28px; }
-.question-label { color: var(--accent); font-weight: 800; }
+.question-context {
+  margin: 18px 0 28px;
+  padding: 20px 22px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  line-height: 1.75;
+  font-size: 1.02rem;
+}
+.question-label { color: var(--accent); font-weight: 800; font-size: 1.08rem; }
 .math-block { margin: 22px 0; padding: 18px; border-radius: 12px; background: #f8fafc; overflow-x: auto; }
 .answer-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 22px; }
 .feedback { margin-top: 16px; padding: 14px 16px; border-radius: 12px; font-weight: 650; }

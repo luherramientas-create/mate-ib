@@ -12,7 +12,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js';
 import {
   getAuth,
-  signInAnonymously
+  signInAnonymously,
+  signOut
 } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js';
 
 const firebaseConfig = {
@@ -40,6 +41,8 @@ const INSTITUTION_PATH = [
   'secciones'
 ];
 
+// Canonical assessment root:
+// evaluaciones/{year}/funcionesExponenciales/{studentId}/preguntas/{questionId}/...
 const ASSESSMENT_PATH = [
   'evaluaciones',
   '2026',
@@ -49,10 +52,19 @@ const ASSESSMENT_PATH = [
 let authReady = false;
 
 export async function ensureAnonymousAuth() {
-  if (authReady || auth.currentUser) {
+  if (authReady && auth.currentUser?.isAnonymous) {
+    return auth.currentUser;
+  }
+
+  if (auth.currentUser && !auth.currentUser.isAnonymous) {
+    await signOut(auth);
+  }
+
+  if (auth.currentUser?.isAnonymous) {
     authReady = true;
     return auth.currentUser;
   }
+
   const credential = await signInAnonymously(auth);
   authReady = true;
   return credential.user;
@@ -83,9 +95,6 @@ export async function loadProgressFromFirestore(studentId) {
   return {};
 }
 
-// Returns the authenticated anonymous UID that will be attached to every
-// assessment write. This is an identity foundation for the next security phase;
-// it is NOT treated as authorization until Security Rules validate the relationship.
 export async function getAnonymousUid() {
   const user = await ensureAnonymousAuth();
   if (!user?.uid) throw new Error('No fue posible obtener el UID anónimo.');
@@ -111,7 +120,6 @@ export async function saveAttemptToFirestore({
   const attemptsRef = collection(
     db,
     ...ASSESSMENT_PATH,
-    'estudiantes',
     student.id,
     'preguntas',
     questionId,
@@ -146,7 +154,6 @@ export async function saveProgressToFirestore({ student, section, questionId, pr
   const progressRef = doc(
     db,
     ...ASSESSMENT_PATH,
-    'estudiantes',
     student.id,
     'preguntas',
     questionId

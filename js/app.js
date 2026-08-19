@@ -135,6 +135,7 @@ function renderSubquestion() {
   content.innerHTML = `
     <p class="eyebrow">${question.title} · ${progressText}</p>
     <div class="question-body">
+      <div class="question-context">${question.context || ''}</div>
       <div class="question-label">${sub.label}</div>
       <p>${sub.prompt}</p>
       <div class="math-block">\[${sub.equation}\]</div>

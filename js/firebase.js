@@ -3,7 +3,6 @@ import {
   getFirestore,
   collection,
   getDocs,
-  getDoc,
   query,
   where,
   doc,
@@ -78,26 +77,11 @@ export async function loadActiveStudents(section) {
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 }
 
+// Student progress is kept in localStorage for the student app.
+// Firestore remains the teacher-facing record of attempts and progress,
+// but anonymous clients do not need to read assessment data back.
 export async function loadProgressFromFirestore(studentId) {
-  if (!studentId) return {};
-  await ensureAnonymousAuth();
-
-  const questionsRef = collection(
-    db,
-    ...ASSESSMENT_PATH,
-    'estudiantes',
-    studentId,
-    'preguntas'
-  );
-
-  const snapshot = await getDocs(questionsRef);
-  const progress = {};
-  snapshot.forEach((questionDoc) => {
-    const data = questionDoc.data();
-    const { updatedAt, studentId: storedStudentId, studentName, section, questionId, ...savedProgress } = data;
-    progress[`${studentId}_${questionDoc.id}`] = savedProgress;
-  });
-  return progress;
+  return {};
 }
 
 export async function saveAttemptToFirestore({

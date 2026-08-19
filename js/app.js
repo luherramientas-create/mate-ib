@@ -1,4 +1,5 @@
 import { QUESTIONS } from './questions.js';
+import { loadActiveStudents, saveAttemptToFirestore, saveProgressToFirestore } from './firebase.js';
 
 const state = {
   section: null,
@@ -19,7 +20,7 @@ function showScreen(id) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function saveProgress() {
+function saveLocalProgress() {
   localStorage.setItem('luMateIBProgress', JSON.stringify(state.progress));
 }
 
@@ -50,7 +51,7 @@ function isAccepted(value, subquestion) {
   });
 }
 
-function setSection(section) {
+async function setSection(section) {
   state.section = section;
   const list = $('#student-list');
   const form = $('#guest-form');
@@ -63,32 +64,29 @@ function setSection(section) {
     return;
   }
 
-  $('#student-help').textContent = `Estudiantes activos de ${section}.`;
-
-  // Datos provisionales para el MVP. La siguiente fase reemplazará esta función por Firestore.
-  const students = section === '11-A'
-    ? [
-        ['Oliver Acevedo', 'demo-11A-001'], ['Steven Badilla', 'demo-11A-002'], ['Nahomy Céspedes', 'demo-11A-003'],
-        ['Brayan Duarte', 'demo-11A-004'], ['Deykel Espinoza', 'demo-11A-005'], ['Ian Espinoza', 'demo-11A-006'],
-        ['Arianna Goméz', 'demo-11A-007'], ['José Pablo Pérez', 'demo-11A-008'], ['Jimena Retana', 'demo-11A-009'],
-        ['Sebastián Retana', 'demo-11A-010'], ['Latrell Reyes', 'demo-11A-011'], ['Emily Umaña', 'demo-11A-012']
-      ]
-    : [
-        ['Santiago Chinchilla', 'demo-11B-001'], ['Sharon Quesada', 'demo-11B-002'], ['Escarleth Espinoza', 'demo-11B-003'],
-        ['Matías Céspedes', 'demo-11B-004'], ['Hanzel Joseph', 'demo-11B-005'], ['Evans López', 'demo-11B-006'],
-        ['Isaac Oquendo', 'demo-11B-007'], ['Esteban Pérez', 'demo-11B-008'], ['Samantha Portilla', 'demo-11B-009'],
-        ['Abigail Quesada', 'demo-11B-010'], ['Yedani Urbina', 'demo-11B-011'], ['Edgar Zúñiga', 'demo-11B-012']
-      ];
-
-  students.forEach(([name, id]) => {
-    const button = document.createElement('button');
-    button.className = 'student-btn';
-    button.innerHTML = `${name}<small>${section}</small>`;
-    button.addEventListener('click', () => selectStudent({ id, name }));
-    list.appendChild(button);
-  });
-
+  $('#student-help').textContent = `Cargando estudiantes activos de ${section}…`;
   showScreen('student-screen');
+
+  try {
+    const students = await loadActiveStudents(section);
+    if (!students.length) {
+      $('#student-help').textContent = `No se encontraron estudiantes activos en ${section}.`;
+      return;
+    }
+
+    $('#student-help').textContent = `Selecciona tu nombre (${students.length} estudiantes activos).`;
+    students.forEach((student) => {
+      const button = document.createElement('button');
+      button.className = 'student-btn';
+      button.innerHTML = `${student.name}<small>${section}</small>`;
+      button.addEventListener('click', () => selectStudent({ ...student, section }));
+      list.appendChild(button);
+    });
+  } catch (error) {
+    console.error('Firebase / estudiantes:', error);
+    $('#student-help').textContent = 'No fue posible cargar la lista desde Firebase. Revisa la conexión y las reglas de acceso.';
+    list.innerHTML = `<div class="feedback error">Firebase respondió con un error de acceso o configuración. La aplicación no utilizará una lista ficticia.</div>`;
+  }
 }
 
 function selectStudent(student) {
@@ -154,7 +152,7 @@ function renderSubquestion() {
   });
 }
 
-function recordAttempt(sub, answer, correct) {
+async function recordAttempt(sub, answer, correct) {
   const key = progressKey(state.currentQuestion.id);
   if (!state.progress[key]) state.progress[key] = { completedParts: {}, inProgress: true };
   const part = state.progress[key].completedParts[sub.id] || { attempts: 0, hints: [], history: [] };
@@ -163,11 +161,46 @@ function recordAttempt(sub, answer, correct) {
   part.hints = part.hints || [];
   part.timeSpent = Math.round((Date.now() - state.startedAt) / 1000);
   state.progress[key].completedParts[sub.id] = part;
-  saveProgress();
+  saveLocalProgress();
+
+  try {
+    await saveAttemptToFirestore({
+      student: state.student,
+      section: state.section,
+      questionId: state.currentQuestion.id,
+      subquestionId: sub.id,
+      answer,
+      correct,
+      attemptNumber: state.attempts,
+      hintsUsed: state.hintsUsed,
+      highestHintLevel: state.hintsUsed,
+      hintTypes: part.hints.map((hint) => hint.type),
+      score: correct ? calculateScore(state.attempts) : null,
+      timeSpent: part.timeSpent
+    });
+  } catch (error) {
+    console.error('Firebase / intento:', error);
+  }
+
   return part;
 }
 
-function checkAnswer() {
+async function persistProgress(questionId) {
+  const key = progressKey(questionId);
+  saveLocalProgress();
+  try {
+    await saveProgressToFirestore({
+      student: state.student,
+      section: state.section,
+      questionId,
+      progress: state.progress[key]
+    });
+  } catch (error) {
+    console.error('Firebase / progreso:', error);
+  }
+}
+
+async function checkAnswer() {
   const sub = state.currentQuestion.subquestions[state.currentSubquestionIndex];
   const input = $('#answer-input');
   const answer = input.value.trim();
@@ -175,7 +208,7 @@ function checkAnswer() {
 
   state.attempts += 1;
   const correct = isAccepted(answer, sub);
-  const part = recordAttempt(sub, answer, correct);
+  const part = await recordAttempt(sub, answer, correct);
   const feedback = $('#feedback-area');
 
   if (correct) {
@@ -183,7 +216,7 @@ function checkAnswer() {
     part.score = score;
     part.completed = true;
     feedback.innerHTML = `<div class="feedback success">✓ Correcto. ${state.attempts === 1 ? 'Lo resolviste de forma independiente.' : `Resultado: ${score} %.`}</div>`;
-    saveProgress();
+    await persistProgress(state.currentQuestion.id);
     renderNextButton(feedback);
     return;
   }
@@ -194,7 +227,8 @@ function checkAnswer() {
     state.hintsUsed += 1;
     part.hints.push({ level: hint.level, type: hint.type, at: new Date().toISOString() });
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Pista ${hint.level}</strong><div>${hint.text}</div></div>`);
-    saveProgress();
+    saveLocalProgress();
+    await persistProgress(state.currentQuestion.id);
   } else {
     feedback.insertAdjacentHTML('beforeend', `<div class="hint-box"><strong>Última orientación</strong><div>Revisa las pistas anteriores y vuelve a intentarlo con calma.</div></div>`);
   }
@@ -205,12 +239,12 @@ function renderNextButton(container) {
   const button = document.createElement('button');
   button.className = 'primary-btn next-btn';
   button.textContent = isLast ? 'Volver a preguntas' : 'Siguiente parte →';
-  button.addEventListener('click', () => {
+  button.addEventListener('click', async () => {
     if (isLast) {
       const key = progressKey(state.currentQuestion.id);
       state.progress[key].completed = true;
       state.progress[key].inProgress = false;
-      saveProgress();
+      await persistProgress(state.currentQuestion.id);
       renderQuestionMenu();
       showScreen('questions-screen');
     } else {
@@ -221,7 +255,7 @@ function renderNextButton(container) {
       const key = progressKey(state.currentQuestion.id);
       if (!state.progress[key]) state.progress[key] = {};
       state.progress[key].inProgress = true;
-      saveProgress();
+      await persistProgress(state.currentQuestion.id);
       renderSubquestion();
     }
   });
